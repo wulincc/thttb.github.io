@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>URL 加载器</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      line-height: 1.6;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 输入框容器 */
+    .input-container {
+      padding: 16px;
+      background: #f5f5f5;
+      border-bottom: 1px solid #ddd;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .input-container label {
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    .input-container input {
+      flex: 1;
+      padding: 10px 12px;
+      font-size: 14px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .input-container input:focus {
+      border-color: #4a90d9;
+      box-shadow: 0 0 0 3px rgba(74, 144, 217, 0.1);
+    }
+
+    .input-container button {
+      padding: 10px 20px;
+      font-size: 14px;
+      background: #4a90d9;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.2s;
+    }
+
+    .input-container button:hover {
+      background: #3a7bc8;
+    }
+
+    .input-container button:active {
+      background: #2d6cb5;
+    }
+
+    /* iframe 容器 */
+    .iframe-container {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .iframe-container iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    /* 父层行为模式面板（联调用，悬浮在右下角） */
+    .mode-panel {
+      position: fixed;
+      right: 8px;
+      bottom: 8px;
+      z-index: 10;
+      padding: 6px 8px;
+      font-size: 12px;
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid #ccc;
+      border-radius: 6px;
+    }
+
+    .mode-panel select, .mode-panel input {
+      font-size: 12px;
+    }
+
+    /* 空状态提示 */
+    .empty-state {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      color: #999;
+    }
+
+    .empty-state p {
+      margin-top: 8px;
+      font-size: 14px;
+    }
+  </style>
+  <script src="https://unpkg.com/vconsole@latest/dist/vconsole.min.js"></script>
+</head>
+<body>
+  <!-- URL 输入框 -->
+  <div class="input-container">
+    <label for="urlInput">URL:</label>
+    <input
+      type="url"
+      id="urlInput"
+      placeholder="请输入要加载的 URL，例如：https://example.com"
+    />
+    <button id="loadBtn">加载</button>
+  </div>
+
+  <!-- iframe 容器 -->
+  <div class="iframe-container">
+    <div class="empty-state" id="emptyState">
+      <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+        <line x1="3" y1="9" x2="21" y2="9"/>
+        <line x1="9" y1="21" x2="9" y2="9"/>
+      </svg>
+      <p>在上方输入 URL 后点击加载按钮</p>
+    </div>
+     <!-- 父层行为模式：用于联调时复现超时 / 失败 / 慢回包 / 不处理清空 -->
+    <div class="mode-panel">
+      父层行为：
+      <select id="modeSelect">
+        <option value="normal">正常</option>
+        <option value="silent">不响应（模拟超时）</option>
+        <option value="failure">总是 FAILURE</option>
+        <option value="delay">延迟回包</option>
+        <option value="ignore-clear">忽略空 STORE</option>
+      </select>
+      <input id="delayInput" type="number" min="0" step="500" value="2000" style="width:64px" title="延迟毫秒" />ms
+    </div>
+    <iframe id="contentFrame" style="display: none;"></iframe>
+  </div>
+
+ 
+
+  <script>
+    var vConsole = new window.VConsole();
+    const urlInput = document.getElementById('urlInput');
+    const loadBtn = document.getElementById('loadBtn');
+    const contentFrame = document.getElementById('contentFrame');
+    const emptyState = document.getElementById('emptyState');
+
+    /**
+     * 加载 URL 到 iframe
+     */
+    function loadUrl() {
+      let url = urlInput.value.trim();
+
+      if (!url) {
+        alert('请输入有效的 URL');
+        return;
+      }
+
+      // 如果没有协议前缀，默认添加 https://
+      if (!/^https?:\/\//i.test(url)) {
+        url = 'https://' + url;
+        urlInput.value = url;
+      }
+
+      // 显示 iframe，隐藏空状态提示
+      emptyState.style.display = 'none';
+      contentFrame.style.display = 'block';
+
+      // 把本次加载的 origin 加入 白名单（origins 在下方协议段声明，调用时已初始化）
+      try {
+        origins.add(new URL(url).origin);
+      } catch (e) { /* ignore */ }
+
+      // 加载 URL
+      contentFrame.src = url;
+    }
+
+    // 点击加载按钮
+    loadBtn.addEventListener('click', loadUrl);
+
+    // 按 Enter 键也可以加载
+    urlInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        loadUrl();
+      }
+    });
+
+    // 监听 iframe 加载完成事件
+    contentFrame.addEventListener('load', () => {
+      // 只有当 iframe 有实际内容时才隐藏输入框
+      if (contentFrame.src) {
+        document.querySelector('.input-container').style.display = 'none';
+        document.querySelector('.mode-panel').style.display = 'none';
+      }
+    });
+
+    // 按 ESC 键重新显示输入框
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        const inputContainer = document.querySelector('.input-container');
+        if (inputContainer.style.display === 'none') {
+          inputContainer.style.display = 'flex';
+          urlInput.focus();
+        }
+        const modePanel = document.querySelector('.mode-panel');
+        if (modePanel.style.display === 'none') {
+          modePanel.style.display = 'flex';
+        }
+      }
+    });
+
+
+    // ===================== appInfo 父层协议（模拟第三方父层） =====================
+    // 注意：必须通过 https 或 localhost 提供本页，否则子应用的 crypto.subtle 不可用。
+    // 父层只存放子应用加密后的密文，看不懂也不应该解析内容；日志只记录类型 / origin / 字段名，不打印值。
+    const STORAGE_KEY = 'app_info';
+    const LOG = '[AppInfo][parent]';
+    const modeSelect = document.getElementById('modeSelect');
+    const delayInput = document.getElementById('delayInput');
+
+    // origin 白名单：首次加载的 src origin（auth 跳转后 origin 可能变化）
+    const origins = new Set([]);
+
+    const fieldNames = (data) => (data && typeof data === 'object' ? Object.keys(data) : []);
+
+    function reply(target, origin, message) {
+      const send = () => {
+        target.postMessage(message, origin);
+        console.log(LOG, 'response', { type: message.type, to: origin });
+      };
+      if (modeSelect.value === 'delay') {
+        const ms = Number(delayInput.value) || 0;
+        console.log(LOG, 'delay-response', { ms });
+        setTimeout(send, ms);
+      } else {
+        send();
+      }
+    }
+
+    window.addEventListener('message', (event) => {
+      const type = event.data && event.data.type;
+      if (type !== 'STORE_APP_INFO' && type !== 'REQUEST_APP_INFO') {
+        return; // 不是本协议的消息，忽略
+      }
+      if (!contentFrame.contentWindow || event.source !== contentFrame.contentWindow) {
+        console.warn(LOG, 'reject', { type, reason: 'source-not-iframe', origin: event.origin });
+        return;
+      }
+      if (!origins.has(event.origin)) {
+        console.warn(LOG, 'reject', { type, reason: 'origin-not-allowed', origin: event.origin });
+        return;
+      }
+
+      if (type === 'STORE_APP_INFO') {
+        const data = event.data.data;
+        const names = fieldNames(data);
+        if (names.length === 0) {
+          // 空 data = 子应用通知清空
+          if (modeSelect.value === 'ignore-clear') {
+            console.log(LOG, 'store', { origin: event.origin, fields: [], action: 'ignored-by-mode' });
+            return;
+          }
+          sessionStorage.removeItem(STORAGE_KEY);
+          console.log(LOG, 'store', { origin: event.origin, fields: [], action: 'removed' });
+          return;
+        }
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        console.log(LOG, 'store', { origin: event.origin, fields: names, action: 'saved' });
+        return;
+      }
+
+      // REQUEST_APP_INFO
+      console.log(LOG, 'request', { origin: event.origin, mode: modeSelect.value });
+      if (modSelect.value === 'silent') {
+        return; // 模拟父层不响应，子应用侧应在超时后降级
+      }
+      let stored = null;
+      try {
+        stored = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || 'null');
+      } catch (e) {
+        stored = null;
+      }
+      if (modeSelect.value === 'failure' || !stored || fieldNames(stored).length === 0) {
+        reply(event.source, event.origin, { type: 'REQUEST_APP_INFO_FAILURE' });
+        return;
+      }
+      reply(event.source, event.origin, { type: 'REQUEST_APP_INFO_SUCCESS', data: stored });
+    });
+
+    // 示例：自动聚焦到输入框
+    urlInput.focus();
+  </script>
+</body>
+</html>
